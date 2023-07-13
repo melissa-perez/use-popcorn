@@ -9,7 +9,10 @@ const KEY = '7950ef59';
 export default function App() {
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [query, setQuery] = useState('');
-  const [watched, setWatched] = useState([]);
+  const [watched, setWatched] = useState(function () {
+    const storage = localStorage.getItem('watched');
+    return JSON.parse(storage);
+  });
   const [movies, setMovies] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,14 +34,24 @@ export default function App() {
   function handleDeleteMovieInWatched(movieId) {
     setWatched(watched => watched.filter(movie => movie.imdbId !== movieId));
   }
+
   useEffect(
     function () {
+      localStorage.setItem('watched', JSON.stringify(watched));
+    },
+    [watched]
+  );
+  useEffect(
+    function () {
+      const controller = new AbortController();
+
       async function fetchMovies() {
         try {
           setIsLoading(true);
           setError('');
           const res = await fetch(
-            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
           );
 
           if (!res.ok)
@@ -65,6 +78,10 @@ export default function App() {
       }
       handleCloseMovie();
       fetchMovies();
+
+      return function () {
+        controller.abort();
+      };
     },
     [query]
   );
@@ -255,14 +272,21 @@ function MovieDetails({
     function () {
       const controller = new AbortController();
       async function getMovieDetails() {
-        setIsLoading(true);
-        const res = await fetch(
-          `https://www.omdbapi.com/?apikey=${KEY}&i=${selectedMovieId}`,
-          { signal: controller.signal }
-        );
-        const data = await res.json();
-        setMovie(data);
-        setIsLoading(false);
+        try {
+          setIsLoading(true);
+          const res = await fetch(
+            `https://www.omdbapi.com/?apikey=${KEY}&i=${selectedMovieId}`,
+            { signal: controller.signal }
+          );
+          const data = await res.json();
+          setMovie(data);
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.log(err.message);
+          }
+        } finally {
+          setIsLoading(false);
+        }
       }
       getMovieDetails();
 
@@ -363,7 +387,6 @@ function MovieDetails({
 
 function WatchedSummary({ watched }) {
   const avgImdbRating = average(watched.map(movie => movie.imdbRating));
-  console.log(watched.map(movie => movie.imdbRating));
   const avgUserRating = average(watched.map(movie => movie.userRating));
   const avgRuntime = average(watched.map(movie => movie.runtime));
 
